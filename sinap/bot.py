@@ -279,7 +279,6 @@ class Bot(object):
 
         return args
 
-    @coroutine
     def on_privmsg(self, net, sender, target, message):
         user = net.parse_user(sender)
         if not user:
