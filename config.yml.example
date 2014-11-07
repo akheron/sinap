@@ -1,0 +1,13 @@
+nick: sinap
+realname: https://github.com/akheron/sinap
+
+networks:
+  ircnet:
+    server: open.ircnet.net
+    channels:
+      - '#sinap'
+
+  freenode:
+    server: irc.freenode.net
+    channels:
+      - '#sinap'
