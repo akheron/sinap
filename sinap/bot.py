@@ -219,11 +219,11 @@ class Bot(object):
         nick = config.get('nick', self.nick)
 
         if host is None:
-            self.error(netname, 'No host specified, aborting')
+            self.log.error(netname, 'No host specified, aborting')
             return
 
         if nick is None:
-            self.error(netname, 'No nick specified, aborting')
+            self.log.error(netname, 'No nick specified, aborting')
             return
 
         log = self.logger(netname)
@@ -249,7 +249,7 @@ class Bot(object):
             for channel in config.get('channels', []):
                 network.join(channel)
             yield network.wait_for_disconnect()
-            self.info(netname, 'Connection lost to %s:%s, reconnecting' % (host, port))
+            self.log.info(netname, 'Connection lost to %s:%s, reconnecting' % (host, port))
 
     def validate_args(self, args, nargs):
         if nargs == '*':
