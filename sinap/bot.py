@@ -19,13 +19,17 @@ class Scope(object):
     def __init__(self, net, from_, to):
         self.net = net
         self.user = from_
-        self.to = to
         if net.is_channel(to):
             # Channel message
             self.target = to
         else:
             # Private message
             self.target = self.user.nick
+
+    def to(self, target):
+        copy = Scope(self.net, self.user, self.target)
+        copy.target = target
+        return copy
 
 
 class BotIRCConnection(IRCConnection):
