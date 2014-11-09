@@ -28,6 +28,12 @@ class Scope(object):
             self.target = self.user.nick
 
 
+class BotIRCConnection(IRCConnection):
+    def __init__(self, bot, name, *args, **kwds):
+        super().__init__(*args, delegate=bot, **kwds)
+        self.name = name
+
+
 class Bot(object):
     def __init__(self, config, io_loop=None):
         if isinstance(config, dict):
@@ -38,6 +44,9 @@ class Bot(object):
             self.load_config()
 
         self.ioloop = io_loop or IOLoop.instance()
+
+        # netname
+        self.pings = {}
 
     def run(self):
         self.reload(initial=True)
@@ -227,7 +236,8 @@ class Bot(object):
             return
 
         log = self.logger(netname)
-        network = IRCConnection(
+        network = BotIRCConnection(
+            self, netname,
             host=host,
             port=port,
             nick=nick,
@@ -235,7 +245,6 @@ class Bot(object):
             username=config.get('username', self.config.get('username')),
             realname=config.get('realname', self.config.get('realname')),
             logger=log,
-            delegate=self,  # delegate message handers to self
             io_loop=self.ioloop,
         )
 
@@ -245,10 +254,15 @@ class Bot(object):
             log.info('Connected')
 
             self.networks[netname] = network
+            self.ping(network, schedule_only=True)
 
             for channel in config.get('channels', []):
                 network.join(channel)
             yield network.wait_for_disconnect()
+
+            if netname in self.pings:
+                self.ioloop.cancel_timeout(self.pings[netname])
+
             self.log.info(netname, 'Connection lost to %s:%s, reconnecting' % (host, port))
 
     def validate_args(self, args, nargs):
@@ -317,3 +331,27 @@ class Bot(object):
         # Not a registered command, call plain message handlers
         for handler in self.message_handlers:
             self.ioloop.add_callback(handler, user, scope, message)
+
+    def handle_message(self, net, message):
+        # We got a message so the connection is alive. Reschedule the
+        # ping for this network.
+        if net.name in self.pings:
+            self.ioloop.remove_timeout(self.pings[net.name])
+            self.ping(net, schedule_only=True)
+
+    def on_ping(self, net, sender, *args):
+        net.send_message('PONG', *args)
+
+    def ping(self, net, schedule_only=False):
+        if not schedule_only:
+            net.send_message('PING', net.host)
+
+        net_config = self.config['networks'][net.name]
+        period = net_config.get('ping', self.config.get('ping', 90))
+        self.pings[net.name] = self.ioloop.call_later(
+            period, self.ping, net,
+        )
+
+        # Don't expect a PONG, just trust that the write to the socket
+        # causes the socket to be closed if there's a connection
+        # error.

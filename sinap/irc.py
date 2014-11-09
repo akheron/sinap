@@ -60,8 +60,8 @@ class IRCConnection(object):
                  logger=None,
                  delegate=None,
                  io_loop=None):
-        self._host = host
-        self._port = port
+        self.host = host
+        self.port = port
         self._nick = nick
 
         self._password = password
@@ -89,9 +89,16 @@ class IRCConnection(object):
     @coroutine
     def connect(self):
         self._conn = yield TCPClient(io_loop=self._ioloop) \
-            .connect(self._host, self._port)
+            .connect(self.host, self.port)
         self._ioloop.add_callback(self.read_loop)
         yield self.register()
+
+    def disconnect(self):
+        if not self._conn:
+            return
+
+        self._conn.close()
+        self._conn = None
 
     @coroutine
     def register(self):
@@ -187,7 +194,7 @@ class IRCConnection(object):
             else:
                 self.process_message(data)
 
-        self._disconnect_future.set_result((self._host, self._port))
+        self._disconnect_future.set_result((self.host, self.port))
         self._disconnect_future = Future()
 
     def process_message(self, data):
@@ -204,7 +211,9 @@ class IRCConnection(object):
             future.set_result(msg)
         del self._message_listeners[:]
 
-        self._ioloop.add_callback(self.handle_message, msg)
+        for _, handler in self.handlers('handle_message'):
+            self._ioloop.add_callback(handler, msg)
+
         if msg.is_command:
             self._ioloop.add_callback(self.handle_command, msg)
 
@@ -219,7 +228,8 @@ Command handler signature does not match the command sent by server.
 Singature: %s%s
 Command: %s''' % (handler_name, sig, msg))
         else:
-            self._ioloop.add_callback(self.handle_reply, msg)
+            for _, handler in self.handlers('handle_reply'):
+                self._ioloop.add_callback(handler, msg)
 
     def parse_message(self, data):
         if data.startswith(':'):
@@ -249,13 +259,16 @@ Command: %s''' % (handler_name, sig, msg))
 
         return Message(prefix, cmd, args)
 
-    def handlers_for_command(self, msg):
-        handler_name = 'on_%s' % msg.command.lower()
+    def handlers(self, handler_name):
         if hasattr(self, handler_name):
             yield handler_name, getattr(self, handler_name)
         if self._delegate and hasattr(self._delegate, handler_name):
             handler = getattr(self._delegate, handler_name)
             yield handler_name, partial(handler, self)
+
+    def handlers_for_command(self, msg):
+        handler_name = 'on_%s' % msg.command.lower()
+        yield from self.handlers(handler_name)
 
     USER_RE = re.compile('^(?P<nick>[^!]+)(!(?P<user>[^@]+)@(?P<host>.*))?$')
 
@@ -311,5 +324,7 @@ Command: %s''' % (handler_name, sig, msg))
     # and the number of arguments expected by the handler, a warning
     # is logged and the handler is not called.
 
-    def on_ping(self, prefix, *args):
-        self.send_message('PONG', *args)
+    # Example:
+    #
+    # def on_ping(self, prefix, *args):
+    #     self.send_message('PONG', *args)
