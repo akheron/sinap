@@ -67,9 +67,10 @@ class Module(object):
 
     # Internals
 
-    def __init__(self, bot, logger):
+    def __init__(self, bot, config, logger):
         self.bot = bot
         self.ioloop = bot.ioloop
+        self.config = config
         self.log = logger
 
         self._timeouts = set()

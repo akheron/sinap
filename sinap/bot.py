@@ -117,23 +117,28 @@ class Bot(object):
         self.public_commands = {}
         self.command_prefix = self.config.get('command_prefix', '!')
 
-        moduledirs = {'core': Path(__file__).parent / 'modules'}
+        modulesets = self.config.get('modulesets', {})
+        if 'core' not in modulesets:
+            modulesets['core'] = {}
+        modulesets['core']['path'] = str(Path(__file__).parent / 'modules')
 
         for prefix, moduledir in self.config.get('modulesets', {}).items():
             if prefix == 'core':
                 # Don't allow overwriting core
                 continue
 
-            moduledirs[prefix] = Path(moduledir)
+        for moduleset, config in modulesets.items():
+            if isinstance(config, str):
+                config = {'path': config}
 
-        for prefix, moduledir in moduledirs.items():
+            moduledir = Path(config['path'])
             if not moduledir.exists():
                 self.log.warning('Module directory does not exist: %s' % moduledir)
                 continue
 
             for modulepath in moduledir.glob('*.py'):
                 module_name = modulepath.stem
-                qualified_name = '%s:%s' % (prefix, module_name)
+                qualified_name = '%s:%s' % (moduleset, module_name)
                 self.log.info('Loading module %s' % qualified_name)
 
                 try:
@@ -163,8 +168,10 @@ class Bot(object):
                                    qualified_name)
                     continue
 
+                module_config = config.get(module_name, {})
+                logger = self.logger(qualified_name)
                 try:
-                    module = ctor(self, self.logger(qualified_name))
+                    module = ctor(self, module_config, logger)
                     self.modules[qualified_name] = module
                 except:
                     self.log.info('Failed to load module %s' % qualified_name)
