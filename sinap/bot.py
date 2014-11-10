@@ -111,6 +111,7 @@ class Bot(object):
                 module._shutdown()
 
         self.modules = {}
+        self.exports = {}
         self.message_handlers = []
 
         self.admin_commands = {}
@@ -177,10 +178,18 @@ class Bot(object):
                     self.log.info('Failed to load module %s' % qualified_name)
                     self.log.debug('Uncaught exception', exc_info=True)
 
-                # Start the module
-                module._startup()
+                export_as = getattr(module, 'export_as', None)
+                if export_as:
+                    if export_as in self.exports:
+                        self.log.warning('Export %r already exists, '
+                                         'overwriting' % export_as)
+                    self.exports[export_as] = module
 
         for qualified_name, module in self.modules.items():
+            # Start the module
+            module._startup()
+
+            # Register message and command handlers
             on_message = getattr(module, 'on_message', None)
             if on_message:
                 self.message_handlers.append(on_message)

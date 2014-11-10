@@ -2,12 +2,13 @@ nick: sinap
 realname: https://github.com/akheron/sinap
 
 networks:
-  ircnet:
-    server: open.ircnet.net
-    channels:
-      - '#sinap'
-
   freenode:
     server: irc.freenode.net
     channels:
       - '#sinap'
+
+modulesets:
+  core:
+    http:
+      listen: 8000
+      address: '127.0.0.1'
