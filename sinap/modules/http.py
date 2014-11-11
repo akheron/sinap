@@ -26,6 +26,10 @@ class HTTPModule(Module):
         # Start when the first handlers are added
         self._start()
 
+    def reverse_url(self, name, *args):
+        baseurl = self.config.get('baseurl', '')
+        return baseurl + self.app.reverse_url(name, *args)
+
     def _start(self):
         if self._started:
             return
