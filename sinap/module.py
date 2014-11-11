@@ -2,7 +2,7 @@ import shlex
 import subprocess
 
 from tornado.concurrent import Future
-from tornado.gen import coroutine
+from tornado.gen import Task, coroutine
 from tornado.process import Subprocess
 
 
@@ -17,7 +17,7 @@ class Module(object):
 
     # Usage self.say(scope, 'Hello, world!')
     def say(self, scope, message):
-        scope.net.privmsg(scope.target, message)
+        return scope.net.privmsg(scope.target, message)
 
     # Usage: yield self.wait(2.5)
     def wait(self, seconds):
@@ -62,8 +62,9 @@ class Module(object):
             proc.stdout.read_until_close(),
             proc.stderr.read_until_close(),
         ]
+        status = yield Task(proc.set_exit_callback)
 
-        return stdout, stderr
+        return status, stdout, stderr
 
     # Internals
 

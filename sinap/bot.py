@@ -281,13 +281,15 @@ class Bot(object):
             yield network.wait_for_disconnect()
 
             if netname in self.pings:
-                self.ioloop.cancel_timeout(self.pings[netname])
+                self.ioloop.remove_timeout(self.pings[netname])
 
             self.log.info(netname, 'Connection lost to %s:%s, reconnecting' % (host, port))
 
     def validate_args(self, args, nargs):
         if nargs == '*':
             return [args] if args else []
+        elif nargs == ':':
+            return [args] if args else None
 
         if isinstance(nargs, tuple):
             min, max = nargs
