@@ -314,7 +314,7 @@ class Bot(object):
             if netname in self.pings:
                 self.ioloop.remove_timeout(self.pings[netname])
 
-            self.log.info(netname, 'Connection lost to %s:%s, reconnecting' % (host, port))
+            log.info('Connection lost to %s:%s, reconnecting' % (host, port))
 
     def validate_args(self, args, nargs):
         if nargs == '*':
