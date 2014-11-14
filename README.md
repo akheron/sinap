@@ -9,8 +9,8 @@ It's a work in progress.
 Run like this:
 
     pip install -r requirements.txt
-    python -m sinap.main
+    ./bin/sinap
 
 Usage help:
 
-    python -m sinap.main --help
+    ./bin/sinap --help

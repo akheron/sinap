@@ -1,6 +1,8 @@
 from pathlib import Path
 import inspect
 import logging
+import os
+import sys
 
 from tornado.gen import coroutine
 from tornado.ioloop import IOLoop
@@ -39,7 +41,7 @@ class BotIRCConnection(IRCConnection):
 
 
 class Bot(object):
-    def __init__(self, config, io_loop=None):
+    def __init__(self, config, state=None, io_loop=None):
         if isinstance(config, dict):
             self.config_file = None
             self.config = config
@@ -47,9 +49,16 @@ class Bot(object):
             self.config_file = config
             self.load_config()
 
+        self.state = {}
+        if state:
+            # --state ircnet:<state>,freenode:<state>
+            for net_state in state.split(','):
+                netname, state = net_state.split(':', 1)
+                self.state[netname] = state
+
         self.ioloop = io_loop or IOLoop.instance()
 
-        # netname
+        # netname -> timeout handle
         self.pings = {}
 
     def run(self):
@@ -57,8 +66,9 @@ class Bot(object):
 
         self.nick = self.config.get('nick', None)
         self.networks = {}
-        for name, network_config in self.config.get('networks', {}).items():
-            self.ioloop.add_callback(self.connect, name, network_config)
+        for name, config in self.config.get('networks', {}).items():
+            state = self.state.get(name)
+            self.ioloop.add_callback(self.connect, name, config, state)
 
     def load_config(self):
         import yaml
@@ -241,8 +251,24 @@ class Bot(object):
         self.admin_masks = self.config.get('admins', [])
         self.load_modules(initial)
 
+    def restart(self):
+        state = []
+        for netname, net in self.networks.items():
+            net_state = net.state()
+            state.append('%s:%s' % (netname, net_state))
+
+        try:
+            i = sys.argv.index('--state')
+            del sys.argv[i:i + 2]
+        except ValueError:
+            pass
+
+        new_args = sys.argv + ['--state', ','.join(state)]
+        self.log.debug('Executing %s' % new_args)
+        os.execv(new_args[0], new_args)
+
     @coroutine
-    def connect(self, netname, config):
+    def connect(self, netname, config, state):
         host = config.get('server')
         port = config.get('port', 6667)
         nick = config.get('nick', self.nick)
@@ -269,9 +295,14 @@ class Bot(object):
         )
 
         while True:
-            log.info('Connecting to %s:%s' % (host, port))
-            yield network.connect()
-            log.info('Connected')
+            if state:
+                log.info('Reusing old connection')
+                yield network.connect(state)
+                state = None
+            else:
+                log.info('Connecting to %s:%s' % (host, port))
+                yield network.connect()
+                log.info('Connected')
 
             self.networks[netname] = network
             self.ping(network, schedule_only=True)

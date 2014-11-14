@@ -4,6 +4,7 @@ from sinap.module import Module
 class CommandsModule(Module):
     admin_commands = {
         'reload': 'Reload configuration and modules',
+        'restart': 'Restart the bot without disconnecting from networks',
         'networks': 'List networks',
         'join': {
             'nargs': 2,
@@ -28,6 +29,10 @@ class CommandsModule(Module):
     def command_reload(self, user, scope):
         self.bot.reload()
         self.say(scope, 'Reload OK')
+
+    def command_restart(self, user, scope):
+        self.say(scope, 'Restarting')
+        self.bot.restart()
 
     def command_networks(self, user, scope):
         names = ', '.join(sorted(self.bot.networks.keys()))

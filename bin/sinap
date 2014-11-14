@@ -1,4 +1,10 @@
-from argparse import ArgumentParser
+#!/usr/bin/env python3
+
+import sys
+sys.path.insert(0, '.')
+
+
+from argparse import ArgumentParser, SUPPRESS
 from tornado.ioloop import IOLoop
 from sinap.bot import Bot
 
@@ -9,9 +15,13 @@ def main():
         '-c', '--config', default='config.yml',
         help='Configuration file [default: config.yml]',
     )
+    # Hidden option for passing state to the child process upon
+    # restart
+    parser.add_argument('--state', help=SUPPRESS)
+
     args = parser.parse_args()
 
-    bot = Bot(args.config)
+    bot = Bot(args.config, args.state)
     bot.run()
 
     IOLoop.instance().start()
