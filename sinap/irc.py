@@ -340,3 +340,9 @@ Command: %s''' % (handler_name, sig, msg))
     #
     # def on_ping(self, prefix, *args):
     #     self.send_message('PONG', *args)
+
+    def on_nick(self, prefix, new_nick):
+        user = self.parse_user(prefix)
+        if user and user.nick == self._nick:
+            self.log.debug('Nick changed to %s' % new_nick)
+            self._nick = new_nick
