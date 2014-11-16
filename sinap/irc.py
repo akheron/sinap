@@ -63,7 +63,7 @@ class IRCConnection(object):
                  io_loop=None):
         self.host = host
         self.port = port
-        self._nick = nick
+        self.nick = nick
 
         self._password = password
         if username:
@@ -92,7 +92,7 @@ class IRCConnection(object):
         if state:
             fileno, old_nick = state.split(':')
             self._conn = IOStream(socket(fileno=int(fileno)))
-            self._nick = old_nick
+            self.nick = old_nick
             self._ioloop.add_callback(self.read_loop)
         else:
             self._conn = yield TCPClient(io_loop=self._ioloop) \
@@ -110,7 +110,7 @@ class IRCConnection(object):
     def state(self):
         # About to restart, make the fd inheritable
         self._conn.socket.set_inheritable(True)
-        return '%s:%s' % (self._conn.socket.fileno(), self._nick)
+        return '%s:%s' % (self._conn.socket.fileno(), self.nick)
 
     @coroutine
     def register(self):
@@ -119,7 +119,7 @@ class IRCConnection(object):
 
         registered = False
         while True:
-            yield self.nick(self._nick)
+            yield self.nick_(self.nick)
 
             if not registered:
                 yield self.user(self._username, '8', self._realname)
@@ -131,7 +131,7 @@ class IRCConnection(object):
                 break
             elif msg.command == '433':
                 # ERR_NICKNAMEINUSE
-                self._nick += '_'
+                self.nick += '_'
 
     @coroutine
     def send_message(self, command, *args, prefix=None):
@@ -297,7 +297,7 @@ Command: %s''' % (handler_name, sig, msg))
     def pass_(self, password):
         return self.send_message('PASS', password)
 
-    def nick(self, nick):
+    def nick_(self, nick):
         return self.send_message('NICK', nick)
 
     def user(self, username, mask, realname):
@@ -343,6 +343,6 @@ Command: %s''' % (handler_name, sig, msg))
 
     def on_nick(self, prefix, new_nick):
         user = self.parse_user(prefix)
-        if user and user.nick == self._nick:
+        if user and user.nick == self.nick:
             self.log.debug('Nick changed to %s' % new_nick)
-            self._nick = new_nick
+            self.nick = new_nick
