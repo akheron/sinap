@@ -28,6 +28,12 @@ class Scope(object):
             # Private message
             self.target = self.user.nick
 
+    def channel_matches(self, channel):
+        if not self.net.is_channel(self.target):
+            return False
+
+        return self.net.channel_matches(self.target, channel)
+
     def to(self, target):
         copy = Scope(self.net, self.user, self.target)
         copy.target = target

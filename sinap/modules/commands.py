@@ -58,6 +58,8 @@ class CommandsModule(Module):
     def command_part(self, user, scope, channel, network, message=None):
         net = self._check_channel_and_net(scope, channel, network)
         if net:
+            # Translate safe channel's short name to long if needed
+            channel = net.channels.get(channel, channel)
             net.part(channel, message)
 
     def command_help(self, user, scope, command=None):

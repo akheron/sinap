@@ -65,6 +65,10 @@ class IRCConnection(object):
         self.port = port
         self.nick = nick
 
+        self.channels = {}
+        self.safe_channel_prefix = '!'
+        self.safe_channel_idlen = 5
+
         self._password = password
         if username:
             self._username = username
@@ -292,6 +296,24 @@ Command: %s''' % (handler_name, sig, msg))
     def is_channel(self, name):
         return name.startswith(('&', '#', '+', '!'))
 
+    def is_safe_channel(self, name):
+        return name.startswith(self.safe_channel_prefix)
+
+    def parse_channel_name(self, name):
+        if self.is_safe_channel(name):
+            if len(name) >= self.safe_channel_idlen + 2:
+                return name[0] + name[self.safe_channel_idlen + 1:], name
+
+        return name, name
+
+    def channel_matches(self, name1, name2):
+        if len(name2) > len(name1):
+            # Make sure the safe channel's long name is in name1
+            name2, name1 = name1, name2
+
+        names = self.parse_channel_name(name1)
+        return name2 in names
+
     # Command helpers
 
     def pass_(self, password):
@@ -346,3 +368,10 @@ Command: %s''' % (handler_name, sig, msg))
         if user and user.nick == self.nick:
             self.log.debug('Nick changed to %s' % new_nick)
             self.nick = new_nick
+
+    def on_join(self, prefix, channel):
+        user = self.parse_user(prefix)
+        if user and user.nick == self.nick:
+            self.log.debug('Joined channel %s' % channel)
+            short_name, long_name = self.parse_channel_name(channel)
+            self.channels[short_name] = long_name
