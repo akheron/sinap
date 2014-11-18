@@ -32,7 +32,10 @@ class CommandsModule(Module):
 
     def command_restart(self, user, scope):
         self.say(scope, 'Restarting')
-        self.bot.restart()
+        try:
+            self.bot.restart()
+        except ValueError as exc:
+            self.say(scope, str(exc))
 
     def command_networks(self, user, scope):
         names = ', '.join(sorted(self.bot.networks.keys()))

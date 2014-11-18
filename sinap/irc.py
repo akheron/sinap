@@ -2,13 +2,12 @@ from fnmatch import fnmatch
 from functools import partial
 from getpass import getuser
 from io import StringIO
-from socket import socket
 import inspect
 import logging
 import re
 
 from tornado.ioloop import IOLoop
-from tornado.iostream import IOStream, StreamClosedError
+from tornado.iostream import StreamClosedError
 from tornado.tcpclient import TCPClient
 from tornado.concurrent import Future
 from tornado.gen import coroutine
@@ -92,17 +91,11 @@ class IRCConnection(object):
         self._disconnect_future = Future()
 
     @coroutine
-    def connect(self, state=None):
-        if state:
-            fileno, old_nick = state.split(':')
-            self._conn = IOStream(socket(fileno=int(fileno)))
-            self.nick = old_nick
-            self._ioloop.add_callback(self.read_loop)
-        else:
-            self._conn = yield TCPClient(io_loop=self._ioloop) \
-                .connect(self.host, self.port)
-            self._ioloop.add_callback(self.read_loop)
-            yield self.register()
+    def connect(self):
+        self._conn = yield TCPClient(io_loop=self._ioloop) \
+            .connect(self.host, self.port)
+        self._ioloop.add_callback(self.read_loop)
+        yield self.register()
 
     def disconnect(self):
         if not self._conn:
@@ -110,11 +103,6 @@ class IRCConnection(object):
 
         self._conn.close()
         self._conn = None
-
-    def state(self):
-        # About to restart, make the fd inheritable
-        self._conn.socket.set_inheritable(True)
-        return '%s:%s' % (self._conn.socket.fileno(), self.nick)
 
     @coroutine
     def register(self):

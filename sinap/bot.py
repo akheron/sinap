@@ -1,4 +1,5 @@
 from pathlib import Path
+from socket import socket
 import inspect
 import logging
 import os
@@ -7,6 +8,7 @@ import yaml
 
 from tornado.gen import coroutine
 from tornado.ioloop import IOLoop
+from tornado.iostream import IOStream
 
 from sinap.irc import IRCConnection
 from sinap.module import Module
@@ -42,19 +44,101 @@ class Scope(object):
 
 
 class BotIRCConnection(IRCConnection):
-    def __init__(self, bot, name, *args, **kwds):
-        super().__init__(*args, delegate=bot, **kwds)
+    def __init__(self, bot, name, config, logger, io_loop=None):
+        host = config.get('server')
+        nick = config.get('nick')
+
+        if not host:
+            raise ValueError('host not specified')
+
+        if not nick:
+            raise ValueError('nick not specified')
+
+        super().__init__(
+            host=host,
+            port=config.get('port', 6667),
+            nick=nick,
+            password=config.get('pasword'),
+            username=config.get('username'),
+            realname=config.get('realname'),
+            logger=logger,
+            delegate=bot,
+            io_loop=io_loop,
+        )
         self.name = name
+        self.new_host = None
+        self.new_port = None
+
+    @coroutine
+    def connect(self):
+        if self.new_host and self.new_port:
+            self.host = self.new_host
+            self.port = self.new_port
+            self.new_host = self.new_port = None
+
+        yield super().connect()
+
+    def reconfigure(self, config):
+        host = config.get('server')
+        port = config.get('port', 6667)
+        nick = config.get('nick')
+
+        if not host:
+            raise ValueError('host not specified')
+
+        if not nick:
+            raise ValueError('nick not specified')
+
+        self._apply_changes(host, port, nick)
+
+        # Join new channels
+        for channel in config.get('channels', []):
+            if channel not in self.channels:
+                self.join(channel)
+
+        # We don't part any channels here, because reloading the
+        # config would then part from channels that were joined
+        # manually.
+
+    def dump_state(self):
+        # About to restart, make the fd inheritable
+        self._conn.socket.set_inheritable(True)
+        return {
+            'host': self.host,
+            'port': self.port,
+            'fileno': self._conn.socket.fileno(),
+            'nick': self.nick,
+            'channels': self.channels,
+        }
+
+    def load_state(self, state):
+        self._conn = IOStream(socket(fileno=state['fileno']))
+        self.channels = state['channels']
+        self._ioloop.add_callback(self.read_loop)
+
+        self._apply_changes(state['host'], state['port'], state['nick'])
+
+    def _apply_changes(self, host, port, nick):
+        if self.host != host or self.port != port:
+            self.new_host = host
+            self.new_port = port
+            self.nick = nick
+            self.disconnect()
+        elif self.nick != nick:
+            self.nick = nick
+            self.nick_(nick)
 
 
 class Bot(object):
     def __init__(self, config_file, state_file=None, io_loop=None):
+        # Load configuration here to catch errors early on
         self.config_file = config_file
         self.load_config()
 
         if state_file:
             with open(state_file) as fobj:
                 self.state = yaml.safe_load(fobj)
+            os.remove(state_file)
         else:
             self.state = {}
 
@@ -69,17 +153,14 @@ class Bot(object):
 
         self.ioloop = io_loop or IOLoop.instance()
 
+        # netname -> IRCConnection
+        self.networks = {}
+
         # netname -> timeout handle
         self.pings = {}
 
     def run(self):
         self.reload(initial=True)
-
-        self.nick = self.config.get('nick', None)
-        self.networks = {}
-        for name, config in self.config.get('networks', {}).items():
-            state = self.state.get(name)
-            self.ioloop.add_callback(self.connect, name, config, state)
 
     def load_config(self):
         with open(self.config_file) as fobj:
@@ -251,7 +332,7 @@ class Bot(object):
                 self.log.warning('No callable handler for command %s' % name)
 
     def reload(self, initial=False):
-        if not initial and self.config_file:
+        if not initial:
             # Reload configuration
             self.load_config()
 
@@ -260,6 +341,31 @@ class Bot(object):
 
         self.admin_masks = self.config.get('admins', [])
         self.load_modules(initial)
+
+        net_configs = self.config.get('networks', {})
+        for netname, config in sorted(net_configs.items()):
+            # Lookup some defaults from the global config
+            for field in ('nick', 'username', 'realname'):
+                if field not in config and field in self.config:
+                    config[field] = self.config[field]
+
+            net = self.networks.get(netname)
+            if net:
+                # Already connected, reconfigure
+                try:
+                    net.reconfigure(config)
+                except ValueError as exc:
+                    net.log.error(str(exc))
+            else:
+                # Start a new connection
+                self.ioloop.add_callback(self.connect, netname, config)
+
+        for netname, net in sorted(self.networks.items()):
+            config = net_configs.get(netname)
+            if not config and netname in self.networks:
+                # Network has been removed from config, disconnect
+                self.networks[netname].disconnect()
+                del self.networks[netname]
 
     def restart(self):
         if not self.datadir:
@@ -273,58 +379,55 @@ class Bot(object):
         with state_file.open('w') as fobj:
             yaml.dump(state, fobj)
 
-        new_args = sys.argv + ['--state', ]
+        new_args = sys.argv.copy()
+        try:
+            index = new_args.index('--state')
+            new_args[index + 1] = str(state_file)
+        except ValueError:
+            new_args += ['--state', str(state_file)]
+
         self.log.debug('Executing %s' % new_args)
         os.execv(new_args[0], new_args)
 
     @coroutine
-    def connect(self, netname, config, state):
-        host = config.get('server')
-        port = config.get('port', 6667)
-        nick = config.get('nick', self.nick)
-
-        if host is None:
-            self.log.error(netname, 'No host specified, aborting')
-            return
-
-        if nick is None:
-            self.log.error(netname, 'No nick specified, aborting')
-            return
-
+    def connect(self, netname, config):
         log = self.logger(netname)
-        network = BotIRCConnection(
-            self, netname,
-            host=host,
-            port=port,
-            nick=nick,
-            password=config.get('password'),
-            username=config.get('username', self.config.get('username')),
-            realname=config.get('realname', self.config.get('realname')),
-            logger=log,
-            io_loop=self.ioloop,
-        )
+        try:
+            net = BotIRCConnection(self, netname, config, log, self.ioloop)
+        except ValueError as exc:
+            log.error(str(exc))
+            return
 
+        state = self.state.get('networks', {}).get(netname)
         while True:
             if state:
                 log.info('Reusing old connection')
-                yield network.connect(state)
+                net.load_state(state)
+                net.reconfigure(config)
                 state = None
             else:
-                log.info('Connecting to %s:%s' % (host, port))
-                yield network.connect()
+                # net.connect may change net.host and net.port, so
+                # print them afterwards
+                future = net.connect()
+                log.info('Connecting to %s:%s' % (net.host, net.port))
+                yield future
                 log.info('Connected')
 
-            self.networks[netname] = network
-            self.ping(network, schedule_only=True)
+            self.networks[netname] = net
+            self.ping(net, schedule_only=True)
 
             for channel in config.get('channels', []):
-                network.join(channel)
-            yield network.wait_for_disconnect()
+                if channel not in net.channels:
+                    net.join(channel)
+            yield net.wait_for_disconnect()
 
             if netname in self.pings:
                 self.ioloop.remove_timeout(self.pings[netname])
+                del self.pings[netname]
 
-            log.info('Connection lost to %s:%s, reconnecting' % (host, port))
+            log.info('Connection lost to %s:%s, reconnecting' % (
+                net.host, net.port,
+            ))
 
     def validate_args(self, args, nargs):
         if nargs == '*':
