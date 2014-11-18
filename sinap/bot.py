@@ -3,6 +3,7 @@ import inspect
 import logging
 import os
 import sys
+import yaml
 
 from tornado.gen import coroutine
 from tornado.ioloop import IOLoop
@@ -11,7 +12,7 @@ from sinap.irc import IRCConnection
 from sinap.module import Module
 
 
-class LevelFixingFormatter(logging.Formatter):
+class NameMunglingFormatter(logging.Formatter):
     def format(self, record):
         record.name = record.name.rsplit('.', 1)[-1]
         return logging.Formatter.format(self, record)
@@ -47,20 +48,24 @@ class BotIRCConnection(IRCConnection):
 
 
 class Bot(object):
-    def __init__(self, config, state=None, io_loop=None):
-        if isinstance(config, dict):
-            self.config_file = None
-            self.config = config
-        else:
-            self.config_file = config
-            self.load_config()
+    def __init__(self, config_file, state_file=None, io_loop=None):
+        self.config_file = config_file
+        self.load_config()
 
-        self.state = {}
-        if state:
-            # --state ircnet:<state>,freenode:<state>
-            for net_state in state.split(','):
-                netname, state = net_state.split(':', 1)
-                self.state[netname] = state
+        if state_file:
+            with open(state_file) as fobj:
+                self.state = yaml.safe_load(fobj)
+        else:
+            self.state = {}
+
+        if 'datadir' in self.config:
+            self.datadir = Path(self.config['datadir'])
+            if not self.datadir.exists():
+                self.datadir.mkdir(parents=True)
+            if not self.datadir.is_dir():
+                raise ValueError('datadir must be a directory')
+        else:
+            self.datadir = None
 
         self.ioloop = io_loop or IOLoop.instance()
 
@@ -77,9 +82,8 @@ class Bot(object):
             self.ioloop.add_callback(self.connect, name, config, state)
 
     def load_config(self):
-        import yaml
         with open(self.config_file) as fobj:
-            self.config = yaml.load(fobj)
+            self.config = yaml.safe_load(fobj)
 
     def setup_logging(self):
         config = self.config.get('logging', {})
@@ -100,8 +104,8 @@ class Bot(object):
         tornado.handlers = []
         tornado.addHandler(handler)
 
-        # Set up the level fixin formatter for our own loggers
-        formatter = LevelFixingFormatter(fmt)
+        # Set up the name mungling formatter for our own loggers
+        formatter = NameMunglingFormatter(fmt)
         self.logging_handler = logging.StreamHandler()
         self.logging_handler.propagate = False
         self.logging_handler.setLevel(levelno)
@@ -258,18 +262,18 @@ class Bot(object):
         self.load_modules(initial)
 
     def restart(self):
-        state = []
+        if not self.datadir:
+            raise ValueError('Restart is not possible without datadir')
+
+        state = {'networks': {}}
         for netname, net in self.networks.items():
-            net_state = net.state()
-            state.append('%s:%s' % (netname, net_state))
+            state['networks'][netname] = net.dump_state()
 
-        try:
-            i = sys.argv.index('--state')
-            del sys.argv[i:i + 2]
-        except ValueError:
-            pass
+        state_file = Path(self.datadir) / 'state.yml'
+        with state_file.open('w') as fobj:
+            yaml.dump(state, fobj)
 
-        new_args = sys.argv + ['--state', ','.join(state)]
+        new_args = sys.argv + ['--state', ]
         self.log.debug('Executing %s' % new_args)
         os.execv(new_args[0], new_args)
 
