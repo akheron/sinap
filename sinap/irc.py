@@ -68,7 +68,7 @@ class IRCConnection(object):
         self.safe_channel_prefix = '!'
         self.safe_channel_idlen = 5
 
-        self._password = password
+        self.password = password
         if username:
             self._username = username
         else:
@@ -106,8 +106,8 @@ class IRCConnection(object):
 
     @coroutine
     def register(self):
-        if self._password:
-            yield self.pass_(self._password)
+        if self.password:
+            yield self.pass_(self.password)
 
         registered = False
         while True:
