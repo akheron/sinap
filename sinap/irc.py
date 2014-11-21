@@ -198,6 +198,9 @@ class IRCConnection(object):
             else:
                 self.process_message(data)
 
+        # Disconnected -> dropped from channels too
+        self.channels.clear()
+
         self._disconnect_future.set_result((self.host, self.port))
         self._disconnect_future = Future()
 
