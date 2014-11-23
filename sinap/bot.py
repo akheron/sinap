@@ -103,7 +103,7 @@ class BotIRCConnection(IRCConnection):
         # About to restart, make the fd inheritable
         self._conn.socket.set_inheritable(True)
         return {
-            'host': self.host,
+            'server': self.host,
             'port': self.port,
             'fileno': self._conn.socket.fileno(),
             'nick': self.nick,
