@@ -20,7 +20,8 @@ class HTTPModule(Module):
         self.handlers.extend(handlers)
 
         # Wipe all existing handlers and replace with our handlers
-        del self.app.handlers[:]
+        self.app.handlers.clear()
+        self.app.named_handlers.clear()
         self.app.add_handlers('.*$', self.handlers)
 
         # Start when the first handlers are added
