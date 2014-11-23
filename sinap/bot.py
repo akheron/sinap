@@ -153,15 +153,6 @@ class Bot(object):
         else:
             self.state = {}
 
-        if 'datadir' in self.config:
-            self.datadir = Path(self.config['datadir'])
-            if not self.datadir.exists():
-                self.datadir.mkdir(parents=True)
-            if not self.datadir.is_dir():
-                raise ValueError('datadir must be a directory')
-        else:
-            self.datadir = None
-
         self.ioloop = io_loop or IOLoop.instance()
 
         # netname -> IRCConnection
@@ -349,6 +340,15 @@ class Bot(object):
 
         self.setup_logging()
         self.log = self.logger('core')
+
+        if 'datadir' in self.config:
+            self.datadir = Path(self.config['datadir'])
+            if not self.datadir.exists():
+                self.datadir.mkdir(parents=True)
+            if not self.datadir.is_dir():
+                self.log.error('datadir must be a directory')
+        else:
+            self.datadir = None
 
         self.admin_masks = self.config.get('admins', [])
         self.load_modules(initial)
