@@ -80,7 +80,6 @@ class BotIRCConnection(IRCConnection):
 
     def reconfigure(self, config):
         host = config.get('server')
-        port = config.get('port', 6667)
         nick = config.get('nick')
 
         if not host:
@@ -89,7 +88,7 @@ class BotIRCConnection(IRCConnection):
         if not nick:
             raise ValueError('nick not specified')
 
-        self._apply_changes(host, port, nick)
+        self._apply_changes(config)
 
         # Join new channels
         for channel in config.get('channels', []):
@@ -109,6 +108,7 @@ class BotIRCConnection(IRCConnection):
             'fileno': self._conn.socket.fileno(),
             'nick': self.nick,
             'channels': self.channels,
+            'password': self.password,
         }
 
     def load_state(self, state):
@@ -116,9 +116,20 @@ class BotIRCConnection(IRCConnection):
         self.channels = state['channels']
         self._ioloop.add_callback(self.read_loop)
 
-        self._apply_changes(state['host'], state['port'], state['nick'])
+        self._apply_changes(state)
 
-    def _apply_changes(self, host, port, nick):
+    def _apply_changes(self, config):
+        host = config['server']
+        port = config.get('port', 6667)
+        nick = config['nick']
+
+        if 'password' in config:
+            self.password = config['password']
+        if 'username' in config:
+            self.username = config['username']
+        if 'realname' in config:
+            self.realname = config['realname']
+
         if self.host != host or self.port != port:
             self.new_host = host
             self.new_port = port
