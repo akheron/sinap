@@ -58,7 +58,7 @@ class BotIRCConnection(IRCConnection):
             host=host,
             port=config.get('port', 6667),
             nick=nick,
-            password=config.get('pasword'),
+            password=config.get('password'),
             username=config.get('username'),
             realname=config.get('realname'),
             logger=logger,
