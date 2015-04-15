@@ -31,12 +31,19 @@ class Module(object):
 
     # Usage: self.call_later(2.5, self.func, arg1, arg2)
     def call_later(self, seconds, func, *args, **kwds):
-        future = Future()
-        handle = self.ioloop.call_later(seconds, future.set_result, None)
+        def inner(self):
+            func(*args, **kwds)
+            self._timeouts.remove(handle)
 
+        handle = self.ioloop.call_later(seconds, inner)
         self._timeouts.add(handle)
-        future.add_done_callback(lambda f: func(*args, **kwds))
-        future.add_done_callback(lambda f: self._timeouts.remove(handle))
+
+        return handle
+
+    # Pass the return value of call_later() to cancel the timeout
+    def cancel_timeout(self, handle):
+        self.ioloop.remove_timeout(handle)
+        self._timeouts.remove(handle)
 
     @coroutine
     def call_subprocess(self, cmd, stdin_data=None, stdin_async=True, **kwds):
