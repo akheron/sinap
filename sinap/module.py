@@ -39,7 +39,7 @@ class Module(object):
         future.add_done_callback(lambda f: self._timeouts.remove(handle))
 
     @coroutine
-    def call_subprocess(self, cmd, stdin_data=None, stdin_async=True):
+    def call_subprocess(self, cmd, stdin_data=None, stdin_async=True, **kwds):
         stdin = Subprocess.STREAM if stdin_async else subprocess.PIPE
 
         proc = Subprocess(
@@ -47,6 +47,7 @@ class Module(object):
             stdin=stdin,
             stdout=Subprocess.STREAM,
             stderr=Subprocess.STREAM,
+            **kwds
         )
 
         if stdin_data:
