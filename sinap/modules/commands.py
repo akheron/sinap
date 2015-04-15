@@ -89,3 +89,5 @@ class CommandsModule(Module):
                 self.say(scope, 'Usage: %s' % cmd['synopsis'])
                 if cmd['help']:
                     self.say(scope, cmd['help'])
+                if cmd['aliases']:
+                    self.say(scope, 'Aliases: %s' % ', '.join(cmd['aliases']))

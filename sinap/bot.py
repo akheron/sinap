@@ -313,10 +313,12 @@ class Bot(object):
                 nargs = 0
                 synopsis = name
                 help = opts
+                aliases = []
             else:
                 nargs = opts.get('nargs', 0)
                 synopsis = opts.get('synopsis', name)
                 help = opts.get('help', '')
+                aliases = opts.get('aliases', [])
 
             fn = getattr(module, 'command_%s' % name, None)
             if callable(fn):
@@ -326,10 +328,13 @@ class Bot(object):
                     'nargs': nargs,
                     'synopsis': synopsis,
                     'help': help,
+                    'aliases': aliases,
                     'run': fn,
                 }
                 for target in targets:
                     target[name] = handler
+                    for alias in aliases:
+                        target[alias] = handler
             else:
                 self.log.warning('No callable handler for command %s' % name)
 
