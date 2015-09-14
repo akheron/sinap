@@ -5,6 +5,8 @@ from tornado.concurrent import Future
 from tornado.gen import Task, coroutine
 from tornado.process import Subprocess
 
+from sinap.scope import Scope
+
 
 class Module(object):
     # Override in modules for custom startup and shutdown
@@ -15,9 +17,21 @@ class Module(object):
     def shutdown(self):
         pass
 
-    # Usage self.say(scope, 'Hello, world!')
+    # Usage: self.say(scope, 'Hello, World!')
     def say(self, scope, message):
         return scope.net.privmsg(scope.target, message)
+
+    # Usage: self.say_to('network_name', '#channel', 'Hello, World!')
+    # Usage: self.say_to('network_name', 'nick', 'Hello, World!')
+    def say_to(self, network_name, target, message):
+        return self.say(self.make_scope(network_name, target), message)
+
+    def make_scope(self, network_name, target):
+        network = self.bot.networks.get(network_name)
+        if network is None:
+            raise ValueError('No such network: %s' % network_name)
+
+        return Scope(network, None, target, raw=True)
 
     # Usage: yield self.wait(2.5)
     def wait(self, seconds):

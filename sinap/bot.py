@@ -12,35 +12,13 @@ from tornado.iostream import IOStream
 
 from sinap.irc import IRCConnection
 from sinap.module import Module
+from sinap.scope import Scope
 
 
 class NameMunglingFormatter(logging.Formatter):
     def format(self, record):
         record.name = record.name.rsplit('.', 1)[-1]
         return logging.Formatter.format(self, record)
-
-
-class Scope(object):
-    def __init__(self, net, from_, to):
-        self.net = net
-        self.user = from_
-        if net.is_channel(to):
-            # Channel message
-            self.target = to
-        else:
-            # Private message
-            self.target = self.user.nick
-
-    def channel_matches(self, channel):
-        if not self.net.is_channel(self.target):
-            return False
-
-        return self.net.channel_matches(self.target, channel)
-
-    def to(self, target):
-        copy = Scope(self.net, self.user, self.target)
-        copy.target = target
-        return copy
 
 
 class BotIRCConnection(IRCConnection):
