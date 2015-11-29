@@ -3,9 +3,9 @@
 import sys
 sys.path.insert(0, '.')
 
-
 from argparse import ArgumentParser, SUPPRESS
-from tornado.ioloop import IOLoop
+import asyncio
+
 from sinap.bot import Bot
 
 
@@ -24,7 +24,7 @@ def main():
     bot = Bot(args.config, args.state)
     bot.run()
 
-    IOLoop.instance().start()
+    asyncio.get_event_loop().run_forever()
 
 
 if __name__ == '__main__':

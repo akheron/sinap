@@ -3,7 +3,7 @@ realname: https://github.com/akheron/sinap
 
 networks:
   freenode:
-    server: irc.freenode.net
+    server: chat.freenode.net
     channels:
       - '#sinap'
 

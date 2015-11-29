@@ -1,18 +1,32 @@
+from functools import partial
 from pathlib import Path
-from socket import socket
+import asyncio
 import inspect
 import logging
 import os
 import sys
 import yaml
 
-from tornado.gen import coroutine
-from tornado.ioloop import IOLoop
-from tornado.iostream import IOStream
-
 from sinap.irc import IRCConnection
 from sinap.module import Module
 from sinap.scope import Scope
+
+
+class Backoff:
+    def __init__(self, max_wait=300, exponent=1.8):
+        self._current = 2
+        self._max_wait = max_wait
+        self._exponent = exponent
+
+    async def sleep(self):
+        if self._current > self._max_wait:
+            self._current = self._max_wait
+
+        await asyncio.sleep(self._current)
+        self._current **= self._exponent
+
+    def reset(self):
+        self._current = 2
 
 
 class NameMunglingFormatter(logging.Formatter):
@@ -22,7 +36,7 @@ class NameMunglingFormatter(logging.Formatter):
 
 
 class BotIRCConnection(IRCConnection):
-    def __init__(self, bot, name, config, logger, io_loop=None):
+    def __init__(self, bot, name, config, logger, loop=None):
         host = config.get('server')
         nick = config.get('nick')
 
@@ -41,20 +55,19 @@ class BotIRCConnection(IRCConnection):
             realname=config.get('realname'),
             logger=logger,
             delegate=bot,
-            io_loop=io_loop,
+            loop=loop,
         )
         self.name = name
         self.new_host = None
         self.new_port = None
 
-    @coroutine
-    def connect(self):
+    async def connect(self):
         if self.new_host and self.new_port:
             self.host = self.new_host
             self.port = self.new_port
             self.new_host = self.new_port = None
 
-        yield super().connect()
+        await super().connect()
 
     def reconfigure(self, config):
         host = config.get('server')
@@ -79,21 +92,22 @@ class BotIRCConnection(IRCConnection):
 
     def dump_state(self):
         # About to restart, make the fd inheritable
-        self._conn.socket.set_inheritable(True)
+        socket = self._transport.get_extra_info('socket')
+        if socket:
+            socket.set_inheritable(True)
+
         return {
             'server': self.host,
             'port': self.port,
-            'fileno': self._conn.socket.fileno(),
+            'fileno': socket.fileno(),
             'nick': self.nick,
             'channels': self.channels,
             'password': self.password,
         }
 
-    def load_state(self, state):
-        self._conn = IOStream(socket(fileno=state['fileno']))
+    async def load_state(self, state):
+        await self.connect(reuse_fd=state['fileno'])
         self.channels = state['channels']
-        self._ioloop.add_callback(self.read_loop)
-
         self._apply_changes(state)
 
     def _apply_changes(self, config):
@@ -119,7 +133,7 @@ class BotIRCConnection(IRCConnection):
 
 
 class Bot(object):
-    def __init__(self, config_file, state_file=None, io_loop=None):
+    def __init__(self, config_file, state_file=None, loop=None):
         # Load configuration here to catch errors early on
         self.config_file = config_file
         self.load_config()
@@ -131,7 +145,7 @@ class Bot(object):
         else:
             self.state = {}
 
-        self.ioloop = io_loop or IOLoop.instance()
+        self.loop = loop or asyncio.get_event_loop()
 
         # netname -> IRCConnection
         self.networks = {}
@@ -155,15 +169,6 @@ class Bot(object):
 
         levelno = getattr(logging, level.upper())
         fmt = '[%(asctime)-15s][%(name)-20s] %(levelname)s %(message)s'
-
-        # Set up a basic formatter for tornado
-        tornado = logging.getLogger('tornado')
-        handler = logging.StreamHandler()
-        handler.propagate = False
-        handler.setLevel(levelno)
-        handler.setFormatter(logging.Formatter(fmt))
-        tornado.handlers = []
-        tornado.addHandler(handler)
 
         # Set up the name mungling formatter for our own loggers
         formatter = NameMunglingFormatter(fmt)
@@ -352,7 +357,7 @@ class Bot(object):
                     net.log.error(str(exc))
             else:
                 # Start a new connection
-                self.ioloop.add_callback(self.connect, netname, config)
+                self.loop.create_task(self.connect(netname, config))
 
         for netname, net in sorted(self.networks.items()):
             config = net_configs.get(netname)
@@ -383,20 +388,21 @@ class Bot(object):
         self.log.debug('Executing %s' % new_args)
         os.execv(new_args[0], new_args)
 
-    @coroutine
-    def connect(self, netname, config):
+    async def connect(self, netname, config):
         log = self.logger(netname)
         try:
-            net = BotIRCConnection(self, netname, config, log, self.ioloop)
+            net = BotIRCConnection(self, netname, config, log, self.loop)
         except ValueError as exc:
             log.error(str(exc))
             return
 
         state = self.state.get('networks', {}).get(netname)
+        backoff = Backoff()
+
         while True:
             if state:
                 log.info('Reusing old connection')
-                net.load_state(state)
+                await net.load_state(state)
                 net.reconfigure(config)
                 state = None
             else:
@@ -404,8 +410,17 @@ class Bot(object):
                 # print them afterwards
                 future = net.connect()
                 log.info('Connecting to %s:%s' % (net.host, net.port))
-                yield future
-                log.info('Connected')
+                try:
+                    await future
+                except Exception as exc:
+                    log.error('Failed to connect to %s:%s: %s' % (
+                        net.host, net.port, exc,
+                    ))
+                    await backoff.sleep()
+                    continue
+                else:
+                    log.info('Connected')
+                    backoff.reset()
 
             self.networks[netname] = net
             self.ping(net, schedule_only=True)
@@ -413,10 +428,10 @@ class Bot(object):
             for channel in config.get('channels', []):
                 if channel not in net.channels:
                     net.join(channel)
-            yield net.wait_for_disconnect()
+            await net.wait_for_disconnect()
 
             if netname in self.pings:
-                self.ioloop.remove_timeout(self.pings[netname])
+                self.pings[netname].cancel()
                 del self.pings[netname]
 
             log.info('Connection lost to %s:%s, reconnecting' % (
@@ -480,7 +495,7 @@ class Bot(object):
                 args = self.validate_args(args, handler['nargs'])
                 if args is not None:
                     run = handler['run']
-                    self.ioloop.add_callback(run, user, scope, *args)
+                    self.loop.call_soon(partial(run, user, scope, *args))
                 else:
                     net.privmsg(scope.target, 'Usage: %s%s' % (
                         self.command_prefix,
@@ -490,13 +505,13 @@ class Bot(object):
 
         # Not a registered command, call plain message handlers
         for handler in self.message_handlers:
-            self.ioloop.add_callback(handler, user, scope, message)
+            self.loop.call_later(partial(handler, user, scope, message))
 
     def handle_message(self, net, message):
         # We got a message so the connection is alive. Reschedule the
         # ping for this network.
         if net.name in self.pings:
-            self.ioloop.remove_timeout(self.pings[net.name])
+            self.pings[net.name].cancel()
             self.ping(net, schedule_only=True)
 
     def on_ping(self, net, sender, *args):
@@ -508,8 +523,8 @@ class Bot(object):
 
         net_config = self.config['networks'][net.name]
         period = net_config.get('ping', self.config.get('ping', 90))
-        self.pings[net.name] = self.ioloop.call_later(
-            period, self.ping, net,
+        self.pings[net.name] = self.loop.call_later(
+            period, partial(self.ping, net),
         )
 
         # Don't expect a PONG, just trust that the write to the socket
