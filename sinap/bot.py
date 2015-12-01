@@ -150,6 +150,9 @@ class Bot(object):
         # netname -> IRCConnection
         self.networks = {}
 
+        # netname -> Future
+        self.connecting = {}
+
         # netname -> timeout handle
         self.pings = {}
 
@@ -348,6 +351,12 @@ class Bot(object):
                 if field not in config and field in self.config:
                     config[field] = self.config[field]
 
+            connecting = self.connecting.pop(netname, None)
+            if connecting:
+                self.log.info('Cancelling pending connection attempt to %s' %
+                              netname)
+                connecting.cancel()
+
             net = self.networks.get(netname)
             if net:
                 # Already connected, reconfigure
@@ -406,21 +415,27 @@ class Bot(object):
                 net.reconfigure(config)
                 state = None
             else:
+                future = asyncio.ensure_future(net.connect())
+                self.connecting[netname] = future
+
                 # net.connect may change net.host and net.port, so
                 # print them afterwards
-                future = net.connect()
-                log.info('Connecting to %s:%s' % (net.host, net.port))
+                host_port = (net.host, net.port)
+                log.info('Connecting to %s:%s' % host_port)
                 try:
                     await future
+                except asyncio.CancelledError:
+                    # Connection attempt cancelled
+                    return
                 except Exception as exc:
-                    log.error('Failed to connect to %s:%s: %s' % (
-                        net.host, net.port, exc,
-                    ))
+                    log.error('Failed to connect to %s:%s: %s' % host_port)
                     await backoff.sleep()
                     continue
                 else:
                     log.info('Connected')
                     backoff.reset()
+                finally:
+                    self.connecting.pop(netname, None)
 
             self.networks[netname] = net
             self.ping(net, schedule_only=True)
@@ -434,9 +449,7 @@ class Bot(object):
                 self.pings[netname].cancel()
                 del self.pings[netname]
 
-            log.info('Connection lost to %s:%s, reconnecting' % (
-                net.host, net.port,
-            ))
+            log.info('Connection lost to %s:%s, reconnecting' % host_port)
 
     def validate_args(self, args, nargs):
         if nargs == '*':

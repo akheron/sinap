@@ -1,4 +1,3 @@
-from enum import Enum
 from fnmatch import fnmatch
 from functools import partial
 from getpass import getuser
@@ -224,7 +223,12 @@ class IRCConnection(object):
         self._connect_future = asyncio.Future()
         self._loop.create_task(self.register())
 
-        await self._connect_future
+        try:
+            await self._connect_future
+        except asyncio.CancelledError:
+            self.disconnect()
+            raise
+
         self._connect_future = None
         self._disconnect_future = asyncio.Future()
 
@@ -249,7 +253,11 @@ class IRCConnection(object):
 
             if msg.command == '001':
                 # RPL_WELCOME
-                self._connect_future.set_result(None)
+
+                # Check whether the future is done: we might be
+                # disconnected or the future cancelled already
+                if not self._connect_future.done():
+                    self._connect_future.set_result(None)
                 break
             elif msg.command == '433':
                 # ERR_NICKNAMEINUSE
@@ -287,9 +295,9 @@ class IRCConnection(object):
 
             # Disconnected -> dropped from channels, too
             self.channels.clear()
-            if self._connect_future:
+            if self._connect_future and not self._connect_future.done():
                 self._connect_future.set_exception(exc)
-            if self._disconnect_future:
+            if self._disconnect_future and not self._disconnect_future.done():
                 self._disconnect_future.set_result(None)
                 self._disconnect_future = None
 
