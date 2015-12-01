@@ -1,45 +1,45 @@
-# from tornado.httpserver import HTTPServer
-# from tornado.web import Application
-# from sinap.module import Module
+from aiohttp.web import Application
+from sinap.module import Module
 
 
-# class HTTPModule(Module):
-#     export_as = 'http'
+class HTTPModule(Module):
+    export_as = 'http'
 
-#     def __init__(self, *args, **kwds):
-#         super().__init__(*args, **kwds)
-#         self.handlers = []
-#         self.app = Application()
-#         self._started = False
+    def __init__(self, *args, **kwds):
+        super().__init__(*args, **kwds)
+        self._handlers = []
+        self._app = Application()
+        self._server = None
+        self._handler = None
+        self._started = False
 
-#     def shutdown(self):
-#         if self._started:
-#             self.server.stop()
+    def add_route(self, method, path, handler):
+        self.app.router.add_route(method, path, handler)
 
-#     def add_handlers(self, handlers):
-#         self.handlers.extend(handlers)
+        if not self._started:
+            # Start when the first handlers are added
+            self.loop.create_task(self._start())
 
-#         # Wipe all existing handlers and replace with our handlers
-#         self.app.handlers.clear()
-#         self.app.named_handlers.clear()
-#         self.app.add_handlers('.*$', self.handlers)
+    def reverse_url(self, name, *args):
+        baseurl = self.config.get('baseurl', '')
+        return baseurl + self.app.reverse_url(name, *args)
 
-#         # Start when the first handlers are added
-#         self._start()
+    async def _start(self):
+        self._started = True
 
-#     def reverse_url(self, name, *args):
-#         baseurl = self.config.get('baseurl', '')
-#         return baseurl + self.app.reverse_url(name, *args)
+        address = self.config.get('address', '127.0.0.1')
+        port = self.config.get('port', 8000)
 
-#     def _start(self):
-#         if self._started:
-#             return
+        self.log.info('Starting HTTP server at %s:%s' % (address, port))
+        self._handler = self._app.make_handler()
+        await self.loop.create_server(self._handler, address, port)
 
-#         address = self.config.get('address', '127.0.0.1')
-#         port = self.config.get('port', 8000)
+    def shutdown(self):
+        if self._started:
+            self.loop.create_task(self._shutdown_server())
 
-#         self.log.info('Starting HTTP server at %s:%s' % (address, port))
-#         self.server = HTTPServer(self.app)
-#         self.server.listen(port, address)
-
-#         self._started = True
+    async def _shutdown_server(self):
+        await self._handler.finish_connections(1.0)
+        self._server.close()
+        await self._server.wait_closed()
+        await self._app.finish()
