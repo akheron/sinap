@@ -428,7 +428,9 @@ class Bot(object):
                     # Connection attempt cancelled
                     return
                 except Exception as exc:
-                    log.error('Failed to connect to %s:%s: %s' % host_port + (exc,))
+                    log.error('Failed to connect to %s:%s: %s' % (
+                        net.host, net.port, exc,
+                    ))
                     await backoff.sleep()
                     continue
                 else:
