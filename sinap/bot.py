@@ -454,6 +454,15 @@ class Bot(object):
             log.info('Connection lost to %s:%s, reconnecting' % host_port)
 
     def validate_args(self, args, nargs):
+        # nargs can be one of:
+        #
+        #   n            accept exactly n arguments
+        #   (n, m)       accept between n and m arguments (inclusive)
+        #   '*'          varargs list
+        #   ':'          nonempty varargs list
+        #   (n, '*')     n normal arguments and a varargs list
+        #   (n, '*')     n normal arguments and a nonempty varargs list
+        #
         if nargs == '*':
             return [args] if args else []
         elif nargs == ':':
