@@ -4,7 +4,9 @@ import asyncio
 import inspect
 import logging
 import os
+import signal
 import sys
+
 import yaml
 
 from sinap.irc import IRCConnection
@@ -158,6 +160,11 @@ class Bot(object):
 
     def run(self):
         self.reload(initial=True)
+        self.loop.add_signal_handler(signal.SIGUSR1, self.handle_usr1)
+
+    def handle_usr1(self, signum, frame):
+        self.log('SIGUSR1 received, reloading config')
+        self.reload()
 
     def load_config(self):
         with open(self.config_file) as fobj:
