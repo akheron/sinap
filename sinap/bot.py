@@ -531,7 +531,7 @@ class Bot(object):
                 args = self.validate_args(args, handler['nargs'])
                 if args is not None:
                     run = handler['run']
-                    self.loop.call_soon(partial(run, user, scope, *args))
+                    self.run_async_callback(run, user, scope, *args)
                 else:
                     net.privmsg(scope.target, 'Usage: %s%s' % (
                         self.command_prefix,
@@ -541,7 +541,15 @@ class Bot(object):
 
         # Not a registered command, call plain message handlers
         for handler in self.message_handlers:
-            self.loop.call_later(partial(handler, user, scope, message))
+            self.run_async_callback(handler, user, scope, message)
+
+    def run_async_callback(self, callback, *args, **kwds):
+        # Run a callback asynchronously whether it is a normal
+        # function or a coroutine function
+        if asyncio.iscoroutinefunction(callback):
+            self.loop.create_task(callback(*args, **kwds))
+        else:
+            self.loop.call_soon(partial(callback, *args, **kwds))
 
     def handle_message(self, net, message):
         # We got a message so the connection is alive. Reschedule the
