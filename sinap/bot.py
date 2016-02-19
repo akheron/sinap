@@ -284,7 +284,11 @@ class Bot(object):
 
         for qualified_name, module in self.modules.items():
             # Start the module
-            module._startup()
+            try:
+                module._startup()
+            except:
+                self.log.exception('Unable to start module %s' % qualified_name)
+                continue
 
             # Register message and command handlers
             on_message = getattr(module, 'on_message', None)
