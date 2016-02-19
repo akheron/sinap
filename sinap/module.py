@@ -58,37 +58,27 @@ class Module(object):
         self._timeouts.remove(handle)
 
     async def call_subprocess(self, cmd, stdin_data=None, stdin_async=True, **kwds):
-        # XXX TODO
-        raise NotImplementedError('Does not work yet')
+        proc = await asyncio.create_subprocess_exec(
+            shlex.split(cmd),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            loop=self.loop,
+        )
 
-        # from tornado.process import Subprocess
+        # TODO: This probably only works for small amounts of
+        # stdin/stdout data. If the stdin read buffer and stdout write
+        # buffer fill up at the same time, we have a deadlock.
 
-        # stdin = Subprocess.STREAM if stdin_async else subprocess.PIPE
+        if stdin_data:
+            proc.stdin.write(stdin_data)
+            await proc.stdin.drain()
+        proc.stdin.close()
 
-        # proc = Subprocess(
-        #     shlex.split(cmd),
-        #     stdin=stdin,
-        #     stdout=Subprocess.STREAM,
-        #     stderr=Subprocess.STREAM,
-        #     **kwds
-        # )
+        stdout = await proc.stdout.read()
+        stderr = await proc.stderr.read()
+        status = await proc.wait()
 
-        # if stdin_data:
-        #     if stdin_async:
-        #         yield proc.stdin.write(stdin_data)
-        #     else:
-        #         proc.stdin.write(stdin_data)
-
-        # if stdin_async or stdin_data:
-        #     proc.stdin.close()
-
-        # stdout, stderr = yield [
-        #     proc.stdout.read_until_close(),
-        #     proc.stderr.read_until_close(),
-        # ]
-        # status = yield Task(proc.set_exit_callback)
-
-        # return status, stdout, stderr
+        return status, stdout, stderr
 
     # Internals
 
