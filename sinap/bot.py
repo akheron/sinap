@@ -247,7 +247,8 @@ class Bot(object):
                 names = {}
                 with fobj:
                     try:
-                        exec(fobj.read(), names)
+                        code = compile(fobj.read(), str(modulepath), 'exec')
+                        exec(code, names)
                     except:
                         self.log.info('Failed to load module %s' % qualified_name)
                         self.log.debug('Uncaught exception', exc_info=True)
