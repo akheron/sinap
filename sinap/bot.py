@@ -63,13 +63,13 @@ class BotIRCConnection(IRCConnection):
         self.new_host = None
         self.new_port = None
 
-    async def connect(self):
+    async def connect(self, reuse_fd=None):
         if self.new_host and self.new_port:
             self.host = self.new_host
             self.port = self.new_port
             self.new_host = self.new_port = None
 
-        await super().connect()
+        await super().connect(reuse_fd=reuse_fd)
 
     def reconfigure(self, config):
         host = config.get('server')

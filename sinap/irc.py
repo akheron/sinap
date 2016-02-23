@@ -207,7 +207,8 @@ class IRCConnection(object):
             connect_kwds = {'host': self.host, 'port': self.port}
         else:
             self.log.debug('Reusing fd %d' % reuse_fd)
-            connect_kwds = {'sock': socket.fromfd(reuse_fd)}
+            sock = socket.fromfd(reuse_fd, socket.AF_INET, socket.SOCK_STREAM)
+            connect_kwds = {'sock': sock}
 
         self._transport, self._protocol = await self._loop.create_connection(
             lambda: IRCProtocol(self.process_message, self.log),
@@ -216,6 +217,7 @@ class IRCConnection(object):
 
         if reuse_fd:
             # Already registered
+            self._disconnect_future = asyncio.Future()
             return
 
         # This is a new connection, register with the server
