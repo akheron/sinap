@@ -10,5 +10,5 @@ networks:
 modulesets:
   core:
     http:
-      listen: 8000
       address: '127.0.0.1'
+      port: 8000
