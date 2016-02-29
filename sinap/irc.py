@@ -223,7 +223,7 @@ class IRCConnection(object):
         # This is a new connection, register with the server
         # asynchronously
         self._connect_future = asyncio.Future()
-        self._loop.create_task(self.register())
+        self.register()
 
         try:
             await self._connect_future
@@ -234,56 +234,22 @@ class IRCConnection(object):
         self._connect_future = None
         self._disconnect_future = asyncio.Future()
 
-    async def register(self):
+    def register(self):
         self.log.debug('Registering connection')
 
         if self.password:
             self.pass_(self.password)
 
-        registered = False
-        while True:
-            self.nick_(self.nick)
+        self.nick_(self.nick)
+        self.user(self._username, '8', self._realname)
 
-            if not registered:
-                self.user(self._username, '8', self._realname)
-                registered = True
-
-            try:
-                msg = await self.wait_for_message(['001', '433'])
-            except Disconnected:
-                break
-
-            if msg.command == '001':
-                # RPL_WELCOME
-
-                # Check whether the future is done: we might be
-                # disconnected or the future cancelled already
-                if not self._connect_future.done():
-                    self._connect_future.set_result(None)
-                break
-            elif msg.command == '433':
-                # ERR_NICKNAMEINUSE
-                self.nick += '_'
+        # Registration is finalized in on_001 and on_433
 
     def disconnect(self):
         if not self._transport:
             return
 
         self._transport.close()
-
-    async def wait_for_message(self, commands=None):
-        while True:
-            future = asyncio.Future()
-            self._message_listeners.append(future)
-            msg = await future
-
-            if commands is None:
-                # Accept any message
-                return msg
-            else:
-                if msg.command in commands:
-                    # Accept if it's one of the requested commands
-                    return msg
 
     async def wait_for_disconnect(self):
         if not self._disconnect_future:
@@ -317,21 +283,25 @@ class IRCConnection(object):
             self._loop.call_soon(handler, msg)
 
         if msg.is_command:
-            self._loop.call_soon(partial(self.handle_command, msg))
+            type_handler_name = 'handle_command'
+        else:
+            type_handler_name = 'handle_reply'
 
-            # Call the command specific handler if any
-            for handler_name, handler in self.handlers_for_command(msg):
-                sig = inspect.signature(handler)
-                if len(sig.parameters) == len(msg.args) + 1:
-                    self._loop.call_soon(partial(handler, msg.prefix, *msg.args))
-                else:
-                    self.log.warning('''\
+        for _, handler in self.handlers(type_handler_name):
+            self._loop.call_soon(partial(handler, msg))
+
+        # Call the command specific handler if any
+        for handler_name, handler in self.handlers_for_msg(msg):
+            sig = inspect.signature(handler)
+            try:
+                sig.bind(msg.prefix, *msg.args)
+            except TypeError:
+                self.log.warning('''\
 Command handler signature does not match the command sent by server.
 Singature: %s%s
 Command: %s''' % (handler_name, sig, msg))
-        else:
-            for _, handler in self.handlers('handle_reply'):
-                self._loop.call_soon(partial(handler, msg))
+            else:
+                self._loop.call_soon(partial(handler, msg.prefix, *msg.args))
 
     def parse_message(self, data):
         if data.startswith(':'):
@@ -371,9 +341,9 @@ Command: %s''' % (handler_name, sig, msg))
             handler = getattr(self._delegate, handler_name)
             yield handler_name, partial(handler, self)
 
-    def handlers_for_command(self, msg):
+    def handlers_for_msg(self, msg):
         handler_name = 'on_%s' % msg.command.lower()
-        yield from self.handlers(handler_name)
+        return self.handlers(handler_name)
 
     USER_RE = re.compile('^(?P<nick>[^!]+)(!(?P<user>[^@]+)@(?P<host>.*))?$')
 
@@ -451,6 +421,19 @@ Command: %s''' % (handler_name, sig, msg))
     #
     # def on_ping(self, prefix, *args):
     #     self.send_message('PONG', *args)
+
+    def on_001(self, prefix, *args):
+        # RPL_WELCOME
+        if self._connect_future and not self._connect_future.done():
+            # Registration done!
+            self._connect_future.set_result(None)
+
+    def on_433(self, prefix, *args):
+        # ERR_NICKNAMEINUSE
+        if self._connect_future:
+            # Registering, try another nick
+            self.nick += '_'
+            self.nick_(self.nick)
 
     def on_nick(self, prefix, new_nick):
         user = self.parse_user(prefix)
