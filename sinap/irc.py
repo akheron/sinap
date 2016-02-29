@@ -303,34 +303,6 @@ Command: %s''' % (handler_name, sig, msg))
             else:
                 self._loop.call_soon(partial(handler, msg.prefix, *msg.args))
 
-    def parse_message(self, data):
-        if data.startswith(':'):
-            # Has prefix
-            part, data = data.split(' ', 1)
-            prefix = part[1:]
-        else:
-            prefix = None
-
-        if ' ' not in data:
-            # No args
-            return Message(prefix, data, [])
-
-        cmd, data = data.split(' ', 1)
-
-        if data.startswith(':'):
-            return Message(prefix, cmd, [data[1:]])
-
-        if ' :' in data:
-            data, trailing = data.split(' :', 1)
-        else:
-            trailing = None
-
-        args = data.split(' ')
-        if trailing:
-            args.append(trailing)
-
-        return Message(prefix, cmd, args)
-
     def send_message(self, command, *args, prefix=None):
         self._protocol.send_message(command, *args, prefix=prefix)
 
