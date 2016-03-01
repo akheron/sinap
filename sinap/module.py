@@ -59,10 +59,12 @@ class Module(object):
 
     async def call_subprocess(self, cmd, stdin_data=None, stdin_async=True, **kwds):
         proc = await asyncio.create_subprocess_exec(
-            shlex.split(cmd),
+            *shlex.split(cmd),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             loop=self.loop,
+            **kwds
         )
 
         # TODO: This probably only works for small amounts of
