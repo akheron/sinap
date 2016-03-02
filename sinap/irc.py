@@ -3,6 +3,7 @@ from functools import partial
 from getpass import getuser
 from io import StringIO
 import asyncio
+import collections
 import inspect
 import logging
 import re
@@ -197,6 +198,13 @@ class IRCConnection(object):
         self._protocol = None
 
         self._message_listeners = []
+
+        self._send_queue = collections.deque()
+        self._send_burst_decrementer = None
+        self._current_send_burst = 0
+        self._max_send_burst = 3
+        self._send_burst_wait = 2.0
+
         self._connect_future = None
         self._disconnect_future = None
 
@@ -214,6 +222,8 @@ class IRCConnection(object):
             lambda: IRCProtocol(self.process_message, self.log),
             **connect_kwds,
         )
+
+        self.start_send_burst_decrementer()
 
         if reuse_fd:
             # Already registered
@@ -273,6 +283,7 @@ class IRCConnection(object):
                 future.set_exception(exc)
             del self._message_listeners[:]
 
+            self.stop_send_burst_decrementer()
             return
 
         for future in self._message_listeners:
@@ -304,7 +315,32 @@ Command: %s''' % (handler_name, sig, msg))
                 self._loop.call_soon(partial(handler, msg.prefix, *msg.args))
 
     def send_message(self, command, *args, prefix=None):
-        self._protocol.send_message(command, *args, prefix=prefix)
+        self._send_queue.append([command, args, prefix])
+        self._loop.call_soon(self.send_pending_messages)
+
+    def send_pending_messages(self):
+        while self._send_queue and self._current_send_burst < self._max_send_burst:
+            command, args, prefix = self._send_queue.popleft()
+            self._protocol.send_message(command, *args, prefix=prefix)
+            self._current_send_burst += 1
+
+    def start_send_burst_decrementer(self):
+        self._send_burst_decrementer = self._loop.call_later(
+            self._send_burst_wait,
+            self.decrement_send_burst,
+        )
+
+    def stop_send_burst_decrementer(self):
+        if self._send_burst_decrementer:
+            self._send_burst_decrementer.cancel()
+            self._send_burst_decrementer = None
+
+    def decrement_send_burst(self):
+        if self._current_send_burst > 0:
+            self._current_send_burst -= 1
+            self._loop.call_soon(self.send_pending_messages)
+
+        self.start_send_burst_decrementer()
 
     def handlers(self, handler_name):
         if hasattr(self, handler_name):
