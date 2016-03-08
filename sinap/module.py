@@ -43,7 +43,7 @@ class Module(object):
 
     # Usage: self.call_later(2.5, self.func, arg1, arg2)
     def call_later(self, seconds, func, *args, **kwds):
-        def inner(self):
+        def inner():
             func(*args, **kwds)
             self._timeouts.remove(handle)
 
