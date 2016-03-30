@@ -432,8 +432,7 @@ class Bot(object):
 
                 # net.connect may change net.host and net.port, so
                 # print them afterwards
-                host_port = (net.host, net.port)
-                log.info('Connecting to %s:%s' % host_port)
+                log.info('Connecting to %s:%s' % (net.host, net.port))
                 try:
                     await future
                 except asyncio.CancelledError:
@@ -463,7 +462,8 @@ class Bot(object):
                 self.pings[netname].cancel()
                 del self.pings[netname]
 
-            log.info('Connection lost to %s:%s, reconnecting' % host_port)
+            log.info('Connection lost to %s:%s, reconnecting' %
+                     (net.host, net.port))
 
     def validate_args(self, args, nargs):
         # nargs can be one of:
