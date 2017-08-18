@@ -163,6 +163,7 @@ class IRCProtocol(asyncio.Protocol):
 
 class IRCConnection(object):
     def __init__(self, host, port, nick,
+                 ssl=False,
                  password=None,
                  username=None,
                  realname=None,
@@ -172,6 +173,7 @@ class IRCConnection(object):
         self.host = host
         self.port = port
         self.nick = nick
+        self.ssl = True if ssl else None
 
         self.channels = {}
         self.safe_channel_prefix = '!'
@@ -212,7 +214,11 @@ class IRCConnection(object):
         # If reuse_fd is given, it should be a connected file
         # descriptor number
         if reuse_fd is None:
-            connect_kwds = {'host': self.host, 'port': self.port}
+            connect_kwds = {
+                'host': self.host,
+                'port': self.port,
+                'ssl': self.ssl,
+            }
         else:
             self.log.debug('Reusing fd %d' % reuse_fd)
             sock = socket.fromfd(reuse_fd, socket.AF_INET, socket.SOCK_STREAM)

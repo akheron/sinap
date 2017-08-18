@@ -14,6 +14,10 @@ from sinap.module import Module
 from sinap.scope import Scope
 
 
+DEFAULT_PORT = 6667
+DEFAULT_PORT_SSL = 6697
+
+
 class Backoff:
     def __init__(self, max_wait=300, exponent=1.8):
         self._current = 2
@@ -48,9 +52,13 @@ class BotIRCConnection(IRCConnection):
         if not nick:
             raise ValueError('nick not specified')
 
+        ssl = config.get('ssl', False)
+        port = config.get('port', DEFAULT_PORT_SSL if ssl else DEFAULT_PORT)
+
         super().__init__(
             host=host,
-            port=config.get('port', 6667),
+            port=port,
+            ssl=ssl,
             nick=nick,
             password=config.get('password'),
             username=config.get('username'),
