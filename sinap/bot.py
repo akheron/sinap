@@ -170,7 +170,7 @@ class Bot(object):
         self.reload(initial=True)
         self.loop.add_signal_handler(signal.SIGUSR1, self.handle_usr1)
 
-    def handle_usr1(self, signum, frame):
+    def handle_usr1(self, signum=None, frame=None):
         self.log('SIGUSR1 received, reloading config')
         self.reload()
 
